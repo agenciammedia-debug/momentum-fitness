@@ -54,6 +54,7 @@
     .container { padding: 0 20px; }
     .header-title { font-size: 34px; font-weight: 700; margin: 10px 0 24px; letter-spacing: -1px; }
 
+    /* Cards */
     .card {
       background: var(--card-bg);
       border-radius: 20px;
@@ -111,6 +112,7 @@
       color: var(--success);
     }
 
+    /* Interactive Tasks */
     .task-list { display: flex; flex-direction: column; }
 
     .task-item {
@@ -171,6 +173,7 @@
 
     #loader { text-align: center; color: var(--text-muted); margin-top: 40px; font-size: 15px; }
   
+  /* Header Flex y Botón Menú */
     .header-container {
       display: flex;
       justify-content: space-between;
@@ -178,7 +181,7 @@
       margin: 10px 0 24px;
     }
     
-    .header-title { margin: 0; }
+    .header-title { margin: 0; } /* Resetea el margen anterior */
 
     .menu-btn {
       background: none;
@@ -190,6 +193,7 @@
       align-items: center;
     }
 
+    /* Modal Apple-style */
     .modal-overlay {
       display: none;
       position: fixed;
@@ -327,8 +331,8 @@
 
   <script>
     // ============================================================
-    // ⚠️ PEGA AQUÍ TU URL DE IMPLEMENTACIÓN (la que termina en /exec)
-    // La consigues en Apps Script > Implementar > Administrar implementaciones
+    // ⚠️ PEGA AQUÍ TU MISMA URL DE IMPLEMENTACIÓN QUE ya usabas
+    // (la que termina en /exec)
     // ============================================================
     const APP_URL = "https://script.google.com/macros/s/AKfycby8jtiiQFPn8U1CUvAkF-APl4zmveSa83S-XcrBx4R45gkzG21kXDSFPL-4ZKzgPB8/exec";
 
@@ -342,13 +346,36 @@
         });
     });
 
+    // Convierte cualquier fecha "cruda" (ISO tipo 2026-07-20T05:00:00.000Z)
+    // a un formato tipo Apple: "Lun, 20 jul". Si ya viene formateada
+    // desde el backend, la deja tal cual.
+    function formatDateApple(raw) {
+      if (typeof raw !== 'string') raw = String(raw);
+      const pareceISO = /^\d{4}-\d{2}-\d{2}T/.test(raw);
+      if (!pareceISO) return raw;
+
+      const d = new Date(raw);
+      if (isNaN(d.getTime())) return raw;
+
+      let formatted = d.toLocaleDateString('es-ES', {
+        weekday: 'short', day: 'numeric', month: 'short'
+      });
+      formatted = formatted.replace(/\./g, '');
+      return formatted.charAt(0).toUpperCase() + formatted.slice(1);
+    }
+
     function renderData(data) {
       document.getElementById('loader').style.display = 'none';
       const container = document.getElementById('app-content');
-      
+
+      // Refuerzo de orden: Hoy primero, futuros después, pasados al final
+      const orden = { today: 0, future: 1, past: 2 };
+      data.sort((a, b) => (orden[a.category] ?? 1) - (orden[b.category] ?? 1));
+
       data.forEach(dia => {
         const isOverallDone = dia.estadoGeneral === 'Completado';
         const isToday = dia.category === 'today';
+        const diaLabel = formatDateApple(dia.dia);
         
         let tasksHtml = '';
         dia.tasks.forEach(task => {
@@ -369,7 +396,7 @@
           <div class="card-header">
             <div class="day-wrapper">
               ${isToday ? '<span class="badge-today">Hoy</span>' : ''}
-              <div class="day-title">${dia.dia}</div>
+              <div class="day-title">${diaLabel}</div>
             </div>
             <div class="status-badge ${isOverallDone ? 'done' : ''}" id="badge-${dia.index}">
               ${isOverallDone ? 'Completado' : 'Pendiente'}
@@ -384,11 +411,9 @@
     }
 
     function handleTaskToggle(element, rowIndex, colIndex) {
-      // 1. Efecto visual inmediato (sin esperar al servidor)
       const isNowDone = !element.classList.contains('done');
       element.classList.toggle('done');
 
-      // 2. Guardamos el cambio en el Google Sheet, vía la API
       fetch(APP_URL, {
         method: 'POST',
         body: JSON.stringify({ rowIndex, colIndex, isDone: isNowDone })
