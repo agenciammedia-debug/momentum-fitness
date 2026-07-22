@@ -3,8 +3,6 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <!-- Estas 3 líneas hacen que, al agregarla a la pantalla de inicio del iPhone,
-       abra en modo "app" (sin la barra de Safari) -->
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="Momentum">
@@ -171,9 +169,66 @@
       text-decoration: line-through;
     }
 
+    /* Tarjeta de Hidratación (contador) */
+    .task-item.hydration {
+      cursor: default;
+      align-items: center;
+    }
+
+    .hydration-info { flex-grow: 1; margin-right: 14px; }
+
+    .hydration-bar {
+      width: 100%;
+      height: 8px;
+      background: rgba(255,255,255,0.1);
+      border-radius: 4px;
+      overflow: hidden;
+      margin: 6px 0;
+    }
+
+    .hydration-bar-fill {
+      height: 100%;
+      background: var(--accent);
+      border-radius: 4px;
+      transition: width 0.3s ease;
+    }
+
+    .task-item.hydration.done .hydration-bar-fill {
+      background: var(--success);
+    }
+
+    .hydration-count {
+      font-size: 13px;
+      color: var(--text-muted);
+      font-weight: 600;
+    }
+
+    .task-item.hydration.done .hydration-count {
+      color: var(--success);
+    }
+
+    .hydration-controls {
+      display: flex;
+      gap: 8px;
+      flex-shrink: 0;
+    }
+
+    .water-btn {
+      border: none;
+      border-radius: 10px;
+      font-size: 15px;
+      font-weight: 700;
+      padding: 8px 14px;
+      cursor: pointer;
+      color: var(--text-main);
+    }
+
+    .water-btn.plus { background: var(--accent); }
+    .water-btn.minus { background: rgba(255,255,255,0.1); color: var(--text-muted); }
+    .water-btn:active { opacity: 0.6; }
+
     #loader { text-align: center; color: var(--text-muted); margin-top: 40px; font-size: 15px; }
   
-  /* Header Flex y Botón Menú */
     .header-container {
       display: flex;
       justify-content: space-between;
@@ -181,7 +236,7 @@
       margin: 10px 0 24px;
     }
     
-    .header-title { margin: 0; } /* Resetea el margen anterior */
+    .header-title { margin: 0; }
 
     .menu-btn {
       background: none;
@@ -193,7 +248,6 @@
       align-items: center;
     }
 
-    /* Modal Apple-style */
     .modal-overlay {
       display: none;
       position: fixed;
@@ -346,9 +400,8 @@
         });
     });
 
-    // Convierte cualquier fecha "cruda" (ISO tipo 2026-07-20T05:00:00.000Z)
-    // a un formato tipo Apple: "Lun, 20 jul". Si ya viene formateada
-    // desde el backend, la deja tal cual.
+    // Convierte fechas ISO crudas a formato "Lun, 20 jul". Si ya viene
+    // formateada desde el backend, la deja tal cual.
     function formatDateApple(raw) {
       if (typeof raw !== 'string') raw = String(raw);
       const pareceISO = /^\d{4}-\d{2}-\d{2}T/.test(raw);
@@ -367,8 +420,9 @@
     function renderData(data) {
       document.getElementById('loader').style.display = 'none';
       const container = document.getElementById('app-content');
+      container.innerHTML = ''; // limpiamos por si se vuelve a llamar
 
-      // Refuerzo de orden: Hoy primero, futuros después, pasados al final
+      // Orden: Hoy primero, futuros después, pasados al final
       const orden = { today: 0, future: 1, past: 2 };
       data.sort((a, b) => (orden[a.category] ?? 1) - (orden[b.category] ?? 1));
 
@@ -379,15 +433,38 @@
         
         let tasksHtml = '';
         dia.tasks.forEach(task => {
-          tasksHtml += `
-            <div class="task-item ${task.done ? 'done' : ''}" onclick="handleTaskToggle(this, ${dia.index}, ${task.col})">
-              <div class="task-circle"></div>
-              <div class="task-info">
-                <div class="task-name">${task.name}</div>
-                <div class="task-val">${task.val}</div>
+          if (task.id === 'agua') {
+            // --- Tarjeta especial de Hidratación (contador) ---
+            const target = task.target || 0;
+            const count = task.count || 0;
+            const pct = target > 0 ? Math.min(100, (count / target) * 100) : 0;
+
+            tasksHtml += `
+              <div class="task-item hydration ${task.done ? 'done' : ''}" id="hydration-${dia.index}">
+                <div class="hydration-info">
+                  <div class="task-name">${task.name}</div>
+                  <div class="hydration-bar">
+                    <div class="hydration-bar-fill" style="width:${pct}%"></div>
+                  </div>
+                  <div class="hydration-count">${count} / ${target || '?'} L</div>
+                </div>
+                <div class="hydration-controls">
+                  <button class="water-btn minus" onclick="handleWaterUpdate(${dia.index}, ${task.col}, -1)">−</button>
+                  <button class="water-btn plus" onclick="handleWaterUpdate(${dia.index}, ${task.col}, 1)">+1L</button>
+                </div>
               </div>
-            </div>
-          `;
+            `;
+          } else {
+            tasksHtml += `
+              <div class="task-item ${task.done ? 'done' : ''}" onclick="handleTaskToggle(this, ${dia.index}, ${task.col})">
+                <div class="task-circle"></div>
+                <div class="task-info">
+                  <div class="task-name">${task.name}</div>
+                  <div class="task-val">${task.val}</div>
+                </div>
+              </div>
+            `;
+          }
         });
 
         const card = document.createElement('div');
@@ -416,7 +493,7 @@
 
       fetch(APP_URL, {
         method: 'POST',
-        body: JSON.stringify({ rowIndex, colIndex, isDone: isNowDone })
+        body: JSON.stringify({ action: 'toggleTask', rowIndex, colIndex, isDone: isNowDone })
       })
         .then(res => res.json())
         .then(data => {
@@ -430,6 +507,44 @@
           }
         })
         .catch(err => console.error(err));
+    }
+
+    // Suma o resta 1 litro en la tarjeta de Hidratación
+    function handleWaterUpdate(rowIndex, colIndex, delta) {
+      fetch(APP_URL, {
+        method: 'POST',
+        body: JSON.stringify({ action: 'updateWater', rowIndex, colIndex, delta })
+      })
+        .then(res => res.json())
+        .then(data => {
+          updateHydrationUI(rowIndex, data);
+          const badge = document.getElementById('badge-' + rowIndex);
+          if (data.allDone) {
+            badge.innerText = "Completado";
+            badge.classList.add('done');
+          } else {
+            badge.innerText = "Pendiente";
+            badge.classList.remove('done');
+          }
+        })
+        .catch(err => console.error(err));
+    }
+
+    function updateHydrationUI(rowIndex, data) {
+      const item = document.getElementById('hydration-' + rowIndex);
+      if (!item) return;
+      const target = data.target || 0;
+      const count = data.count || 0;
+      const pct = target > 0 ? Math.min(100, (count / target) * 100) : 0;
+
+      item.querySelector('.hydration-bar-fill').style.width = pct + '%';
+      item.querySelector('.hydration-count').innerText = count + ' / ' + (target || '?') + ' L';
+
+      if (target > 0 && count >= target) {
+        item.classList.add('done');
+      } else {
+        item.classList.remove('done');
+      }
     }
 
     // Funciones del Modal
