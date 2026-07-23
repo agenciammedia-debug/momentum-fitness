@@ -169,15 +169,15 @@
       text-decoration: line-through;
     }
 
-    /* Tarjeta de Hidratación (contador) */
-    .task-item.hydration {
+    /* Tarjetas de contador (Hidratación, Leads, Pasaportes...) */
+    .task-item.counter {
       cursor: default;
       align-items: center;
     }
 
-    .hydration-info { flex-grow: 1; margin-right: 14px; }
+    .counter-info { flex-grow: 1; margin-right: 14px; }
 
-    .hydration-bar {
+    .counter-bar {
       width: 100%;
       height: 8px;
       background: rgba(255,255,255,0.1);
@@ -186,34 +186,34 @@
       margin: 6px 0;
     }
 
-    .hydration-bar-fill {
+    .counter-bar-fill {
       height: 100%;
       background: var(--accent);
       border-radius: 4px;
       transition: width 0.25s ease;
     }
 
-    .task-item.hydration.done .hydration-bar-fill {
+    .task-item.counter.done .counter-bar-fill {
       background: var(--success);
     }
 
-    .hydration-count {
+    .counter-count {
       font-size: 13px;
       color: var(--text-muted);
       font-weight: 600;
     }
 
-    .task-item.hydration.done .hydration-count {
+    .task-item.counter.done .counter-count {
       color: var(--success);
     }
 
-    .hydration-controls {
+    .counter-controls {
       display: flex;
       gap: 8px;
       flex-shrink: 0;
     }
 
-    .water-btn {
+    .counter-btn {
       border: none;
       border-radius: 10px;
       font-size: 15px;
@@ -223,9 +223,9 @@
       color: var(--text-main);
     }
 
-    .water-btn.plus { background: var(--accent); }
-    .water-btn.minus { background: rgba(255,255,255,0.1); color: var(--text-muted); }
-    .water-btn:active { opacity: 0.5; transform: scale(0.95); }
+    .counter-btn.plus { background: var(--accent); }
+    .counter-btn.minus { background: rgba(255,255,255,0.1); color: var(--text-muted); }
+    .counter-btn:active { opacity: 0.5; transform: scale(0.95); }
 
     /* Pantalla de carga: fondo borroso + círculo, estilo Apple */
     #loader {
@@ -424,17 +424,17 @@
     const APP_URL = "https://script.google.com/macros/s/AKfycby8jtiiQFPn8U1CUvAkF-APl4zmveSa83S-XcrBx4R45gkzG21kXDSFPL-4ZKzgPB8/exec";
     const CACHE_KEY = 'momentum_plan_cache';
 
+    // Guarda, por cada día (progresoRow), la lista de tareas activas
+    // (columna, tipo y meta) para poder recalcular el estado del día
+    // cada vez que se marca algo.
+    const dayTasksMap = {};
+
     document.addEventListener("DOMContentLoaded", () => {
-      // 1. Si ya tenemos datos guardados de la visita anterior, los mostramos YA,
-      //    sin esperar al servidor. Esto hace que la app abra al instante.
       const cached = localStorage.getItem(CACHE_KEY);
       if (cached) {
         try { renderData(JSON.parse(cached)); } catch (e) { /* caché corrupta, ignorar */ }
       }
 
-      // 2. En paralelo, siempre buscamos los datos frescos del servidor.
-      //    Si había caché, esto actualiza silenciosamente por detrás.
-      //    Si no había caché, esto es lo que muestra el spinner mientras carga.
       fetch(APP_URL + '?action=getPlanData')
         .then(res => res.json())
         .then(data => {
@@ -452,8 +452,6 @@
         });
     });
 
-    // Convierte fechas ISO crudas a formato "Lun, 20 jul". Si ya viene
-    // formateada desde el backend, la deja tal cual.
     function formatDateApple(raw) {
       if (typeof raw !== 'string') raw = String(raw);
       const pareceISO = /^\d{4}-\d{2}-\d{2}T/.test(raw);
@@ -478,35 +476,43 @@
       data.sort((a, b) => (orden[a.category] ?? 1) - (orden[b.category] ?? 1));
 
       data.forEach(dia => {
+        const rowId = dia.progresoRow;
         const isOverallDone = dia.estadoGeneral === 'Completado';
         const isToday = dia.category === 'today';
         const diaLabel = formatDateApple(dia.dia);
-        
+
+        // Guardamos la metadata de tareas de este día para los toques futuros
+        dayTasksMap[rowId] = dia.tasks.map(t => ({
+          col: t.col,
+          type: t.type,
+          target: t.target || 0
+        }));
+
         let tasksHtml = '';
         dia.tasks.forEach(task => {
-          if (task.id === 'agua') {
+          if (task.type === 'counter') {
             const target = task.target || 0;
             const count = task.count || 0;
             const pct = target > 0 ? Math.min(100, (count / target) * 100) : 0;
 
             tasksHtml += `
-              <div class="task-item hydration ${task.done ? 'done' : ''}" id="hydration-${dia.index}" data-count="${count}" data-target="${target}">
-                <div class="hydration-info">
+              <div class="task-item counter ${task.done ? 'done' : ''}" id="counter-${rowId}-${task.id}" data-count="${count}" data-target="${target}" data-unit="${task.unit || ''}">
+                <div class="counter-info">
                   <div class="task-name">${task.name}</div>
-                  <div class="hydration-bar">
-                    <div class="hydration-bar-fill" style="width:${pct}%"></div>
+                  <div class="counter-bar">
+                    <div class="counter-bar-fill" style="width:${pct}%"></div>
                   </div>
-                  <div class="hydration-count">${count} / ${target || '?'} L</div>
+                  <div class="counter-count">${count} / ${target || '?'} ${task.unit || ''}</div>
                 </div>
-                <div class="hydration-controls">
-                  <button class="water-btn minus" onclick="handleWaterUpdate(${dia.index}, ${task.col}, -1)">−</button>
-                  <button class="water-btn plus" onclick="handleWaterUpdate(${dia.index}, ${task.col}, 1)">+1L</button>
+                <div class="counter-controls">
+                  <button class="counter-btn minus" onclick="handleCounterUpdate(${rowId}, ${task.col}, -1, '${task.id}')">−</button>
+                  <button class="counter-btn plus" onclick="handleCounterUpdate(${rowId}, ${task.col}, 1, '${task.id}')">+1</button>
                 </div>
               </div>
             `;
           } else {
             tasksHtml += `
-              <div class="task-item ${task.done ? 'done' : ''}" onclick="handleTaskToggle(this, ${dia.index}, ${task.col})">
+              <div class="task-item ${task.done ? 'done' : ''}" onclick="handleTaskToggle(this, ${rowId}, ${task.col})">
                 <div class="task-circle"></div>
                 <div class="task-info">
                   <div class="task-name">${task.name}</div>
@@ -525,7 +531,7 @@
               ${isToday ? '<span class="badge-today">Hoy</span>' : ''}
               <div class="day-title">${diaLabel}</div>
             </div>
-            <div class="status-badge ${isOverallDone ? 'done' : ''}" id="badge-${dia.index}">
+            <div class="status-badge ${isOverallDone ? 'done' : ''}" id="badge-${rowId}">
               ${isOverallDone ? 'Completado' : 'Pendiente'}
             </div>
           </div>
@@ -537,17 +543,21 @@
       });
     }
 
-    function handleTaskToggle(element, rowIndex, colIndex) {
+    function handleTaskToggle(element, progresoRow, colIndex) {
       const isNowDone = !element.classList.contains('done');
       element.classList.toggle('done');
 
       fetch(APP_URL, {
         method: 'POST',
-        body: JSON.stringify({ action: 'toggleTask', rowIndex, colIndex, isDone: isNowDone })
+        body: JSON.stringify({
+          action: 'toggleTask',
+          progresoRow, colIndex, isDone: isNowDone,
+          dayTasks: dayTasksMap[progresoRow] || []
+        })
       })
         .then(res => res.json())
         .then(data => {
-          const badge = document.getElementById('badge-' + rowIndex);
+          const badge = document.getElementById('badge-' + progresoRow);
           if (data.allDone) {
             badge.innerText = "Completado";
             badge.classList.add('done');
@@ -559,11 +569,10 @@
         .catch(err => console.error(err));
     }
 
-    // Suma o resta 1 litro en la tarjeta de Hidratación.
-    // Actualización OPTIMISTA: la barra se mueve al instante, sin esperar
-    // la respuesta del servidor. Luego se sincroniza en segundo plano.
-    function handleWaterUpdate(rowIndex, colIndex, delta) {
-      const item = document.getElementById('hydration-' + rowIndex);
+    // Suma o resta 1 a cualquier contador (Hidratación, Leads, Pasaportes).
+    // Actualización OPTIMISTA: se mueve la barra al instante.
+    function handleCounterUpdate(progresoRow, colIndex, delta, taskId) {
+      const item = document.getElementById(`counter-${progresoRow}-${taskId}`);
       if (!item) return;
 
       let target = Number(item.dataset.target) || 0;
@@ -574,20 +583,23 @@
       if (target > 0 && current > target) current = target;
 
       item.dataset.count = current;
-      updateHydrationUI(rowIndex, { count: current, target: target });
+      updateCounterUI(progresoRow, taskId, { count: current, target: target });
 
       fetch(APP_URL, {
         method: 'POST',
-        body: JSON.stringify({ action: 'updateWater', rowIndex, colIndex, delta })
+        body: JSON.stringify({
+          action: 'updateCounter',
+          progresoRow, colIndex, delta, target,
+          dayTasks: dayTasksMap[progresoRow] || []
+        })
       })
         .then(res => res.json())
         .then(data => {
-          // Sincronizamos con el valor real del servidor por si hubo diferencia
           item.dataset.count = data.count;
           item.dataset.target = data.target;
-          updateHydrationUI(rowIndex, data);
+          updateCounterUI(progresoRow, taskId, data);
 
-          const badge = document.getElementById('badge-' + rowIndex);
+          const badge = document.getElementById('badge-' + progresoRow);
           if (data.allDone) {
             badge.innerText = "Completado";
             badge.classList.add('done');
@@ -599,15 +611,16 @@
         .catch(err => console.error(err));
     }
 
-    function updateHydrationUI(rowIndex, data) {
-      const item = document.getElementById('hydration-' + rowIndex);
+    function updateCounterUI(progresoRow, taskId, data) {
+      const item = document.getElementById(`counter-${progresoRow}-${taskId}`);
       if (!item) return;
       const target = data.target || 0;
       const count = data.count || 0;
       const pct = target > 0 ? Math.min(100, (count / target) * 100) : 0;
+      const unit = item.dataset.unit || '';
 
-      item.querySelector('.hydration-bar-fill').style.width = pct + '%';
-      item.querySelector('.hydration-count').innerText = count + ' / ' + (target || '?') + ' L';
+      item.querySelector('.counter-bar-fill').style.width = pct + '%';
+      item.querySelector('.counter-count').innerText = count + ' / ' + (target || '?') + ' ' + unit;
 
       if (target > 0 && count >= target) {
         item.classList.add('done');
