@@ -227,6 +227,13 @@
     .counter-btn.minus { background: rgba(255,255,255,0.1); color: var(--text-muted); }
     .counter-btn:active { opacity: 0.5; transform: scale(0.95); }
 
+    /* Botón único y ancho para KPIs sin decrementar (mismo ancho que minus+plus juntos) */
+    .counter-btn.wide {
+      min-width: 92px;
+      text-align: center;
+      padding: 8px 20px;
+    }
+
     /* Pantalla de carga: fondo borroso + círculo, estilo Apple */
     #loader {
       position: fixed;
@@ -425,8 +432,7 @@
     const CACHE_KEY = 'momentum_plan_cache';
 
     // Guarda, por cada día (progresoRow), la lista de tareas activas
-    // (columna, tipo y meta) para poder recalcular el estado del día
-    // cada vez que se marca algo.
+    // (columna, tipo y meta) para poder recalcular el estado del día.
     const dayTasksMap = {};
 
     document.addEventListener("DOMContentLoaded", () => {
@@ -481,7 +487,6 @@
         const isToday = dia.category === 'today';
         const diaLabel = formatDateApple(dia.dia);
 
-        // Guardamos la metadata de tareas de este día para los toques futuros
         dayTasksMap[rowId] = dia.tasks.map(t => ({
           col: t.col,
           type: t.type,
@@ -493,7 +498,16 @@
           if (task.type === 'counter') {
             const target = task.target || 0;
             const count = task.count || 0;
+            const step = task.step || 1;
+            const showMinus = task.minus !== false;
             const pct = target > 0 ? Math.min(100, (count / target) * 100) : 0;
+
+            const controlsHtml = showMinus ? `
+                  <button class="counter-btn minus" onclick="handleCounterUpdate(${rowId}, ${task.col}, -${step}, '${task.id}')">−</button>
+                  <button class="counter-btn plus" onclick="handleCounterUpdate(${rowId}, ${task.col}, ${step}, '${task.id}')">+${step}</button>
+                ` : `
+                  <button class="counter-btn plus wide" onclick="handleCounterUpdate(${rowId}, ${task.col}, ${step}, '${task.id}')">+${step}</button>
+                `;
 
             tasksHtml += `
               <div class="task-item counter ${task.done ? 'done' : ''}" id="counter-${rowId}-${task.id}" data-count="${count}" data-target="${target}" data-unit="${task.unit || ''}">
@@ -505,8 +519,7 @@
                   <div class="counter-count">${count} / ${target || '?'} ${task.unit || ''}</div>
                 </div>
                 <div class="counter-controls">
-                  <button class="counter-btn minus" onclick="handleCounterUpdate(${rowId}, ${task.col}, -1, '${task.id}')">−</button>
-                  <button class="counter-btn plus" onclick="handleCounterUpdate(${rowId}, ${task.col}, 1, '${task.id}')">+1</button>
+                  ${controlsHtml}
                 </div>
               </div>
             `;
@@ -569,7 +582,8 @@
         .catch(err => console.error(err));
     }
 
-    // Suma o resta 1 a cualquier contador (Hidratación, Leads, Pasaportes).
+    // Suma o resta a cualquier contador (Hidratación, Leads, Pasaportes).
+    // "delta" ya viene con el paso correcto (1, 20, 5...) y con signo.
     // Actualización OPTIMISTA: se mueve la barra al instante.
     function handleCounterUpdate(progresoRow, colIndex, delta, taskId) {
       const item = document.getElementById(`counter-${progresoRow}-${taskId}`);
